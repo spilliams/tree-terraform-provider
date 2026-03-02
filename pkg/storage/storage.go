@@ -2,24 +2,24 @@ package storage
 
 import "context"
 
-type Row interface {
+type Entity interface {
 	Type() string
 	ID() string
 	Label() string
 	ParentID() string
-	Columns() map[string]interface{}
+	Attributes() map[string]interface{}
 }
 
-type RowStorer interface {
-	GetRowByID(ctx context.Context, rowType, rowID string) (Row, error)
-	GetRow(ctx context.Context, rowType, rowLabel string) (Row, error)
-	CreateRow(ctx context.Context, rowType, rowLabel string) (Row, error)
-	CreateChild(ctx context.Context, rowType, rowLabel, parentType, parentID string, columns map[string]interface{}) (Row, error)
-	GetChild(ctx context.Context, childLabel, parentID string) (Row, error)
-	ListRows(ctx context.Context, rowType, labelFilter, parentIDFilter string) ([]Row, error)
-	UpdateRow(ctx context.Context, rowType, rowID, newLabel string) (Row, error)
-	UpdateChild(ctx context.Context, childType, childID, newChildLabel, parentType, newParentID string) (Row, error)
-	UpdateColumn(ctx context.Context, rowType, rowID, columnName string, columnValue interface{}) error
-	UpdateColumns(ctx context.Context, rowType, rowID string, columns map[string]interface{}) error
-	DeleteRow(ctx context.Context, rowType, childType, rowID string) error
+type EntityStorer interface {
+	GetEntityByID(ctx context.Context, entityType, entityID string) (Entity, error)
+	GetEntity(ctx context.Context, entityType, entityLabel string) (Entity, error)
+	CreateEntity(ctx context.Context, entityType, entityLabel string) (Entity, error)
+	CreateChildEntity(ctx context.Context, entityType, entityLabel, parentType, parentID string, attributes map[string]interface{}) (Entity, error)
+	GetChildEntity(ctx context.Context, childLabel, parentID string) (Entity, error)
+	ListEntities(ctx context.Context, entityType, labelFilter, parentIDFilter string) ([]Entity, error)
+	UpdateEntity(ctx context.Context, entityType, entityID, newLabel string) (Entity, error)
+	UpdateChildEntity(ctx context.Context, childType, childID, newChildLabel, parentType, newParentID string) (Entity, error)
+	UpdateAttribute(ctx context.Context, entityType, entityID, attributeName string, attributeValue interface{}) error
+	UpdateAttributes(ctx context.Context, entityType, entityID string, attributes map[string]interface{}) error
+	DeleteEntity(ctx context.Context, entityType, childType, entityID string) error
 }

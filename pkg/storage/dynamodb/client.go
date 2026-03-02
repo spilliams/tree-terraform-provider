@@ -25,7 +25,7 @@ type Client struct {
 	ddb *dynamodb.Client
 }
 
-func NewClient(ctx context.Context, profile, region, tableName, keyARN string) (storage.RowStorer, error) {
+func NewClient(ctx context.Context, profile, region, tableName, keyARN string) (storage.EntityStorer, error) {
 	this := &Client{
 		region:    region,
 		tableName: tableName,
@@ -53,12 +53,11 @@ const (
 	storageKeyType = "type"
 	storageKeyID   = "id"
 
-	storageAttrParentID = "parent_id"
-	storageAttrLabel    = "label"
-	storageAttrColumns  = "columns"
+	storageAttrParentID   = "parent_id"
+	storageAttrLabel      = "label"
+	storageAttrAttributes = "attributes"
 
 	storageGSIByParentAndLabel = "ByParentAndLabel"
-	storageGSIByParent         = "ByParent"
 	storageGSIByType           = "ByType"
 
 	storageLSIByTypeAndLabel  = "ByTypeAndLabel"
@@ -176,7 +175,7 @@ func (client *Client) createTableIfNotExists(ctx context.Context) error {
 				Projection: &types.Projection{ProjectionType: types.ProjectionTypeAll},
 			},
 		},
-		BillingMode: types.BillingModePayPerRequest,
+		BillingMode: types.BillingModeProvisioned,
 		SSESpecification: &types.SSESpecification{
 			Enabled:        aws.Bool(true),
 			SSEType:        types.SSETypeKms,
@@ -188,20 +187,20 @@ func (client *Client) createTableIfNotExists(ctx context.Context) error {
 }
 
 var (
-	ErrCannotDeleteRow      = errors.New("cannot delete row")
-	ErrCollisionParentLabel = errors.New("a row with that parent and label already exists")
-	ErrCollisionTypeLabel   = errors.New("a row with that type and label already exists")
+	ErrCannotDeleteEntity   = errors.New("cannot delete entity")
+	ErrCollisionParentLabel = errors.New("an entity with that parent and label already exists")
+	ErrCollisionTypeLabel   = errors.New("an entity with that type and label already exists")
 	ErrNilQueryOutput       = errors.New("something went wrong: the query output was nil")
-	ErrNotFoundRow          = errors.New("row not found")
+	ErrNotFoundEntity       = errors.New("entity not found")
 	ErrTooManyFound         = errors.New("multiple exist where there must only be one")
 )
 
-func (client *Client) GetRowByID(ctx context.Context, rowType, id string) (storage.Row, error) {
-	tflog.Debug(ctx, fmt.Sprintf("GetRowByID %q", id))
+func (client *Client) GetEntityByID(ctx context.Context, entityType, id string) (storage.Entity, error) {
+	tflog.Debug(ctx, fmt.Sprintf("GetEntityByID %q", id))
 	output, err := client.ddb.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: aws.String(client.tableName),
 		Key: map[string]types.AttributeValue{
-			storageKeyType: &types.AttributeValueMemberS{Value: rowType},
+			storageKeyType: &types.AttributeValueMemberS{Value: entityType},
 			storageKeyID:   &types.AttributeValueMemberS{Value: id},
 		},
 		ConsistentRead: aws.Bool(true),
@@ -210,13 +209,13 @@ func (client *Client) GetRowByID(ctx context.Context, rowType, id string) (stora
 		return nil, err
 	}
 	if output.Item == nil {
-		return nil, fmt.Errorf("%w: %q", ErrNotFoundRow, id)
+		return nil, fmt.Errorf("%w: %q", ErrNotFoundEntity, id)
 	}
-	return itemToRow(output.Item)
+	return itemToEntity(output.Item)
 }
 
-func (client *Client) GetRow(ctx context.Context, rowType, label string) (storage.Row, error) {
-	tflog.Debug(ctx, fmt.Sprintf("GetRow %q %q", rowType, label))
+func (client *Client) GetEntity(ctx context.Context, entityType, label string) (storage.Entity, error) {
+	tflog.Debug(ctx, fmt.Sprintf("GetEntity %q %q", entityType, label))
 	output, err := client.ddb.Query(ctx, &dynamodb.QueryInput{
 		TableName:              aws.String(client.tableName),
 		IndexName:              aws.String(storageLSIByTypeAndLabel),
@@ -226,7 +225,7 @@ func (client *Client) GetRow(ctx context.Context, rowType, label string) (storag
 			"#label": storageAttrLabel,
 		},
 		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":type":  &types.AttributeValueMemberS{Value: rowType},
+			":type":  &types.AttributeValueMemberS{Value: entityType},
 			":label": &types.AttributeValueMemberS{Value: label},
 		},
 	})
@@ -237,17 +236,17 @@ func (client *Client) GetRow(ctx context.Context, rowType, label string) (storag
 		return nil, ErrNilQueryOutput
 	}
 	if len(output.Items) == 0 {
-		return nil, fmt.Errorf("%w: type %q and label %q", ErrNotFoundRow, rowType, label)
+		return nil, fmt.Errorf("%w: type %q and label %q", ErrNotFoundEntity, entityType, label)
 	}
 	if len(output.Items) > 1 {
-		return nil, fmt.Errorf("%w: type %q and label %q", ErrTooManyFound, rowType, label)
+		return nil, fmt.Errorf("%w: type %q and label %q", ErrTooManyFound, entityType, label)
 	}
 
-	return itemToRow(output.Items[0])
+	return itemToEntity(output.Items[0])
 }
 
-func (client *Client) CreateRow(ctx context.Context, rowType, label string) (storage.Row, error) {
-	tflog.Debug(ctx, fmt.Sprintf("CreateRow %q %q", rowType, label))
+func (client *Client) CreateEntity(ctx context.Context, entityType, label string) (storage.Entity, error) {
+	tflog.Debug(ctx, fmt.Sprintf("CreateEntity %q %q", entityType, label))
 	// make sure type+name doesn't collide
 	output, err := client.ddb.Query(ctx, &dynamodb.QueryInput{
 		TableName: aws.String(client.tableName),
@@ -259,7 +258,7 @@ func (client *Client) CreateRow(ctx context.Context, rowType, label string) (sto
 			"#label": storageAttrLabel,
 		},
 		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":type":  &types.AttributeValueMemberS{Value: rowType},
+			":type":  &types.AttributeValueMemberS{Value: entityType},
 			":label": &types.AttributeValueMemberS{Value: label},
 		},
 	})
@@ -273,13 +272,13 @@ func (client *Client) CreateRow(ctx context.Context, rowType, label string) (sto
 		return nil, ErrCollisionTypeLabel
 	}
 
-	id := slug.Generate(rowType)
+	id := slug.Generate(entityType)
 
 	// create item as long as type+ID doesn't collide
 	_, err = client.ddb.PutItem(ctx, &dynamodb.PutItemInput{
 		TableName: aws.String(client.tableName),
 		Item: map[string]types.AttributeValue{
-			storageKeyType:   &types.AttributeValueMemberS{Value: rowType},
+			storageKeyType:   &types.AttributeValueMemberS{Value: entityType},
 			storageKeyID:     &types.AttributeValueMemberS{Value: id},
 			storageAttrLabel: &types.AttributeValueMemberS{Value: label},
 		},
@@ -293,30 +292,30 @@ func (client *Client) CreateRow(ctx context.Context, rowType, label string) (sto
 		return nil, err
 	}
 
-	return &row{
-		RowType:  rowType,
-		RowID:    id,
-		RowLabel: label,
+	return &entity{
+		EntityType:  entityType,
+		EntityID:    id,
+		EntityLabel: label,
 	}, nil
 }
 
-func (client *Client) CreateChild(ctx context.Context, rowType, label, parentType, parentID string, columns map[string]interface{}) (storage.Row, error) {
-	tflog.Debug(ctx, fmt.Sprintf("CreateChild %q %q %q %q", rowType, label, parentType, parentID))
-	id := slug.Generate(rowType)
-	object := &row{
-		RowType:    rowType,
-		RowID:      id,
-		RowLabel:   label,
-		RowColumns: columns,
+func (client *Client) CreateChildEntity(ctx context.Context, entityType, label, parentType, parentID string, attributes map[string]interface{}) (storage.Entity, error) {
+	tflog.Debug(ctx, fmt.Sprintf("CreateChild %q %q %q %q", entityType, label, parentType, parentID))
+	id := slug.Generate(entityType)
+	object := &entity{
+		EntityType:       entityType,
+		EntityID:         id,
+		EntityLabel:      label,
+		EntityAttributes: attributes,
 	}
 
 	// make sure parent exists
-	parent, err := client.GetRowByID(ctx, parentType, parentID)
+	parent, err := client.GetEntityByID(ctx, parentType, parentID)
 	if err != nil {
 		return nil, err
 	}
 
-	object.RowParentID = parent.ID()
+	object.EntityParentID = parent.ID()
 
 	// make sure label is unique within the parent
 	output, err := client.ddb.Query(ctx, &dynamodb.QueryInput{
@@ -345,11 +344,11 @@ func (client *Client) CreateChild(ctx context.Context, rowType, label, parentTyp
 	_, err = client.ddb.PutItem(ctx, &dynamodb.PutItemInput{
 		TableName: aws.String(client.tableName),
 		Item: map[string]types.AttributeValue{
-			storageKeyType:      &types.AttributeValueMemberS{Value: rowType},
-			storageKeyID:        &types.AttributeValueMemberS{Value: id},
-			storageAttrLabel:    &types.AttributeValueMemberS{Value: label},
-			storageAttrParentID: &types.AttributeValueMemberS{Value: parentID},
-			storageAttrColumns:  &types.AttributeValueMemberM{Value: columnsToMap(columns)},
+			storageKeyType:        &types.AttributeValueMemberS{Value: entityType},
+			storageKeyID:          &types.AttributeValueMemberS{Value: id},
+			storageAttrLabel:      &types.AttributeValueMemberS{Value: label},
+			storageAttrParentID:   &types.AttributeValueMemberS{Value: parentID},
+			storageAttrAttributes: &types.AttributeValueMemberM{Value: attributesToMap(attributes)},
 		},
 		ExpressionAttributeNames: map[string]string{
 			"#type": storageKeyType,
@@ -364,8 +363,8 @@ func (client *Client) CreateChild(ctx context.Context, rowType, label, parentTyp
 	return object, nil
 }
 
-func (client *Client) GetChild(ctx context.Context, label, parentID string) (storage.Row, error) {
-	tflog.Debug(ctx, fmt.Sprintf("GetChild %q %q", label, parentID))
+func (client *Client) GetChildEntity(ctx context.Context, label, parentID string) (storage.Entity, error) {
+	tflog.Debug(ctx, fmt.Sprintf("GetChildEntity %q %q", label, parentID))
 	output, err := client.ddb.Query(ctx, &dynamodb.QueryInput{
 		TableName:              aws.String(client.tableName),
 		IndexName:              aws.String(storageGSIByParentAndLabel),
@@ -386,17 +385,17 @@ func (client *Client) GetChild(ctx context.Context, label, parentID string) (sto
 		return nil, ErrNilQueryOutput
 	}
 	if len(output.Items) == 0 {
-		return nil, fmt.Errorf("%w with parent ID %q and label %q", ErrNotFoundRow, parentID, label)
+		return nil, fmt.Errorf("%w with parent ID %q and label %q", ErrNotFoundEntity, parentID, label)
 	}
 	if len(output.Items) > 1 {
 		return nil, fmt.Errorf("%w: parent ID %q and label %q", ErrTooManyFound, parentID, label)
 	}
 
-	return itemToRow(output.Items[0])
+	return itemToEntity(output.Items[0])
 }
 
-func (client *Client) ListRows(ctx context.Context, rowType, labelFilter, parentIDFilter string) ([]storage.Row, error) {
-	tflog.Debug(ctx, fmt.Sprintf("ListRows %q %q %q", rowType, labelFilter, parentIDFilter))
+func (client *Client) ListEntities(ctx context.Context, entityType, labelFilter, parentIDFilter string) ([]storage.Entity, error) {
+	tflog.Debug(ctx, fmt.Sprintf("ListEntities %q %q %q", entityType, labelFilter, parentIDFilter))
 	input := &dynamodb.QueryInput{
 		TableName:              aws.String(client.tableName),
 		IndexName:              aws.String(storageGSIByType),
@@ -405,7 +404,7 @@ func (client *Client) ListRows(ctx context.Context, rowType, labelFilter, parent
 			"#type": storageKeyType,
 		},
 		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":type": &types.AttributeValueMemberS{Value: rowType},
+			":type": &types.AttributeValueMemberS{Value: entityType},
 		},
 	}
 
@@ -431,35 +430,35 @@ func (client *Client) ListRows(ctx context.Context, rowType, labelFilter, parent
 	if output == nil || output.Items == nil {
 		return nil, ErrNilQueryOutput
 	}
-	rows := make([]storage.Row, len(output.Items))
+	entities := make([]storage.Entity, len(output.Items))
 	for i, item := range output.Items {
-		rows[i], err = itemToRow(item)
+		entities[i], err = itemToEntity(item)
 		if err != nil {
 			return nil, err
 		}
 	}
-	return rows, nil
+	return entities, nil
 }
 
-func (client *Client) UpdateRow(ctx context.Context, rowType, id, newLabel string) (storage.Row, error) {
-	tflog.Debug(ctx, fmt.Sprintf("UpdatRow %q %q %q", rowType, id, newLabel))
+func (client *Client) UpdateEntity(ctx context.Context, entityType, id, newLabel string) (storage.Entity, error) {
+	tflog.Debug(ctx, fmt.Sprintf("UpdatEntity %q %q %q", entityType, id, newLabel))
 	// ensure new label is available
-	this, err := client.GetRowByID(ctx, rowType, id)
+	this, err := client.GetEntityByID(ctx, entityType, id)
 	if err != nil {
 		return nil, err
 	}
-	_, err = client.GetChild(ctx, newLabel, this.ParentID())
+	_, err = client.GetChildEntity(ctx, newLabel, this.ParentID())
 	if err == nil {
 		return nil, ErrCollisionParentLabel
 	}
-	if !errors.Is(err, ErrNotFoundRow) {
+	if !errors.Is(err, ErrNotFoundEntity) {
 		return nil, err
 	}
 
 	output, err := client.ddb.UpdateItem(ctx, &dynamodb.UpdateItemInput{
 		TableName: aws.String(client.tableName),
 		Key: map[string]types.AttributeValue{
-			storageKeyType: &types.AttributeValueMemberS{Value: rowType},
+			storageKeyType: &types.AttributeValueMemberS{Value: entityType},
 			storageKeyID:   &types.AttributeValueMemberS{Value: id},
 		},
 		UpdateExpression: aws.String("SET #label = :new_label"),
@@ -480,23 +479,23 @@ func (client *Client) UpdateRow(ctx context.Context, rowType, id, newLabel strin
 	if output == nil || output.Attributes == nil {
 		return nil, ErrNilQueryOutput
 	}
-	return itemToRow(output.Attributes)
+	return itemToEntity(output.Attributes)
 }
 
-func (client *Client) UpdateChild(ctx context.Context, childType, childID, newChildLabel, parentType, newParentID string) (storage.Row, error) {
-	tflog.Debug(ctx, fmt.Sprintf("UpdateChild %q %q %q %q %q", childType, childID, newChildLabel, parentType, newParentID))
+func (client *Client) UpdateChildEntity(ctx context.Context, childType, childID, newChildLabel, parentType, newParentID string) (storage.Entity, error) {
+	tflog.Debug(ctx, fmt.Sprintf("UpdateChildEntity %q %q %q %q %q", childType, childID, newChildLabel, parentType, newParentID))
 	// ensure new parent exists
-	_, err := client.GetRowByID(ctx, parentType, newParentID)
+	_, err := client.GetEntityByID(ctx, parentType, newParentID)
 	if err != nil {
 		return nil, err
 	}
 
 	// ensure new label is available
-	_, err = client.GetChild(ctx, newChildLabel, newParentID)
+	_, err = client.GetChildEntity(ctx, newChildLabel, newParentID)
 	if err == nil {
 		return nil, ErrCollisionParentLabel
 	}
-	if !errors.Is(err, ErrNotFoundRow) {
+	if !errors.Is(err, ErrNotFoundEntity) {
 		return nil, err
 	}
 
@@ -527,26 +526,26 @@ func (client *Client) UpdateChild(ctx context.Context, childType, childID, newCh
 	if output == nil || output.Attributes == nil {
 		return nil, ErrNilQueryOutput
 	}
-	return itemToRow(output.Attributes)
+	return itemToEntity(output.Attributes)
 }
 
-func (client *Client) UpdateColumn(ctx context.Context, rowType, rowID, columnName string, columnValue interface{}) error {
-	tflog.Debug(ctx, fmt.Sprintf("UpdateColumn %q %q %q %q", rowType, rowID, columnName, columnValue))
+func (client *Client) UpdateAttribute(ctx context.Context, entityType, entityID, attributeName string, attributeValue interface{}) error {
+	tflog.Debug(ctx, fmt.Sprintf("UpdateAttribute %q %q %q %q", entityType, entityID, attributeName, attributeValue))
 
-	value := ifaceToAttributeValue(columnValue)
+	value := ifaceToAttributeValue(attributeValue)
 
 	_, err := client.ddb.UpdateItem(ctx, &dynamodb.UpdateItemInput{
 		TableName: aws.String(client.tableName),
 		Key: map[string]types.AttributeValue{
-			storageKeyType: &types.AttributeValueMemberS{Value: rowType},
-			storageKeyID:   &types.AttributeValueMemberS{Value: rowID},
+			storageKeyType: &types.AttributeValueMemberS{Value: entityType},
+			storageKeyID:   &types.AttributeValueMemberS{Value: entityID},
 		},
-		UpdateExpression: aws.String("SET #columns.#key = :value"),
+		UpdateExpression: aws.String("SET #attributes.#key = :value"),
 		ExpressionAttributeNames: map[string]string{
-			"#columns": storageAttrColumns,
-			"#key":     columnName,
-			"#type":    storageKeyType,
-			"#id":      storageKeyID,
+			"#attributes": storageAttrAttributes,
+			"#key":        attributeName,
+			"#type":       storageKeyType,
+			"#id":         storageKeyID,
 		},
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":value": value,
@@ -556,31 +555,31 @@ func (client *Client) UpdateColumn(ctx context.Context, rowType, rowID, columnNa
 	return err
 }
 
-func (client *Client) UpdateColumns(ctx context.Context, rowType, rowID string, columns map[string]interface{}) error {
-	tflog.Debug(ctx, fmt.Sprintf("UpdateColumns %q %q", rowType, rowID))
+func (client *Client) UpdateAttributes(ctx context.Context, entityType, entityID string, attributes map[string]interface{}) error {
+	tflog.Debug(ctx, fmt.Sprintf("UpdateAttributes %q %q", entityType, entityID))
 	_, err := client.ddb.UpdateItem(ctx, &dynamodb.UpdateItemInput{
 		TableName: aws.String(client.tableName),
 		Key: map[string]types.AttributeValue{
-			storageKeyType: &types.AttributeValueMemberS{Value: rowType},
-			storageKeyID:   &types.AttributeValueMemberS{Value: rowID},
+			storageKeyType: &types.AttributeValueMemberS{Value: entityType},
+			storageKeyID:   &types.AttributeValueMemberS{Value: entityID},
 		},
-		UpdateExpression: aws.String("SET #columns = :new_columns"),
+		UpdateExpression: aws.String("SET #attributes = :new_attributes"),
 		ExpressionAttributeNames: map[string]string{
-			"#columns": storageAttrColumns,
-			"#type":    storageKeyType,
-			"#id":      storageKeyID,
+			"#attributes": storageAttrAttributes,
+			"#type":       storageKeyType,
+			"#id":         storageKeyID,
 		},
 		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":new_columns": &types.AttributeValueMemberM{Value: columnsToMap(columns)},
+			":new_attributes": &types.AttributeValueMemberM{Value: attributesToMap(attributes)},
 		},
 		ConditionExpression: aws.String("attribute_exists(#type) AND attribute_exists(#id)"),
 	})
 	return err
 }
 
-func (client *Client) DeleteRow(ctx context.Context, rowType, childType, id string) error {
-	tflog.Debug(ctx, fmt.Sprintf("DeleteRow %q %q %q", rowType, childType, id))
-	// ensure this row does not have any children
+func (client *Client) DeleteEntity(ctx context.Context, entityType, childType, id string) error {
+	tflog.Debug(ctx, fmt.Sprintf("DeleteEntity %q %q %q", entityType, childType, id))
+	// ensure this entity does not have any children
 	if len(childType) > 0 {
 		output, err := client.ddb.Query(ctx, &dynamodb.QueryInput{
 			TableName:              aws.String(client.tableName),
@@ -602,14 +601,14 @@ func (client *Client) DeleteRow(ctx context.Context, rowType, childType, id stri
 			return ErrNilQueryOutput
 		}
 		if len(output.Items) > 0 {
-			return fmt.Errorf("%s %s has children: %w", rowType, id, ErrCannotDeleteRow)
+			return fmt.Errorf("%s %s has children: %w", entityType, id, ErrCannotDeleteEntity)
 		}
 	}
 
 	_, err := client.ddb.DeleteItem(ctx, &dynamodb.DeleteItemInput{
 		TableName: aws.String(client.tableName),
 		Key: map[string]types.AttributeValue{
-			storageKeyType: &types.AttributeValueMemberS{Value: rowType},
+			storageKeyType: &types.AttributeValueMemberS{Value: entityType},
 			storageKeyID:   &types.AttributeValueMemberS{Value: id},
 		},
 		ExpressionAttributeNames: map[string]string{

@@ -245,7 +245,7 @@ func (client *Client) GetEntity(ctx context.Context, entityType, label string) (
 	return itemToEntity(output.Items[0])
 }
 
-func (client *Client) CreateEntity(ctx context.Context, entityType, label string) (storage.Entity, error) {
+func (client *Client) CreateEntity(ctx context.Context, entityType, label string, attributes map[string]interface{}) (storage.Entity, error) {
 	tflog.Debug(ctx, fmt.Sprintf("CreateEntity %q %q", entityType, label))
 	// make sure type+name doesn't collide
 	output, err := client.ddb.Query(ctx, &dynamodb.QueryInput{
@@ -278,9 +278,10 @@ func (client *Client) CreateEntity(ctx context.Context, entityType, label string
 	_, err = client.ddb.PutItem(ctx, &dynamodb.PutItemInput{
 		TableName: aws.String(client.tableName),
 		Item: map[string]types.AttributeValue{
-			storageKeyType:   &types.AttributeValueMemberS{Value: entityType},
-			storageKeyID:     &types.AttributeValueMemberS{Value: id},
-			storageAttrLabel: &types.AttributeValueMemberS{Value: label},
+			storageKeyType:        &types.AttributeValueMemberS{Value: entityType},
+			storageKeyID:          &types.AttributeValueMemberS{Value: id},
+			storageAttrLabel:      &types.AttributeValueMemberS{Value: label},
+			storageAttrAttributes: &types.AttributeValueMemberM{Value: attributesToMap(attributes)},
 		},
 		ExpressionAttributeNames: map[string]string{
 			"#type": storageKeyType,
@@ -293,9 +294,10 @@ func (client *Client) CreateEntity(ctx context.Context, entityType, label string
 	}
 
 	return &entity{
-		EntityType:  entityType,
-		EntityID:    id,
-		EntityLabel: label,
+		EntityType:       entityType,
+		EntityID:         id,
+		EntityLabel:      label,
+		EntityAttributes: attributes,
 	}, nil
 }
 

@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v0.2.1
+
+Something went wrong releasing v0.2.0, and pkg.go.dev has the wrong commit for that tag.
+
 ## v0.2.0
 
 1. Fixes a bug in how string lists are stored. Prior to this, string lists were stored in DynamoDB as `SS` or String Set. As such, they were unordered and not good for storing lists. Starting with this version, string lists are stored as `L` with elements stored as `S`.

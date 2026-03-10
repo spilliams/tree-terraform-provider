@@ -13,7 +13,7 @@ type Entity interface {
 type EntityStorer interface {
 	GetEntityByID(ctx context.Context, entityType, entityID string) (Entity, error)
 	GetEntity(ctx context.Context, entityType, entityLabel string) (Entity, error)
-	CreateEntity(ctx context.Context, entityType, entityLabel string) (Entity, error)
+	CreateEntity(ctx context.Context, entityType, entityLabel string, attributes map[string]interface{}) (Entity, error)
 	CreateChildEntity(ctx context.Context, entityType, entityLabel, parentType, parentID string, attributes map[string]interface{}) (Entity, error)
 	GetChildEntity(ctx context.Context, childLabel, parentID string) (Entity, error)
 	ListEntities(ctx context.Context, entityType, labelFilter, parentIDFilter string) ([]Entity, error)

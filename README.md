@@ -16,6 +16,6 @@ See /docs/rationale.md for more detail.
 
 ## Introduction
 
-A small sample implementation is available in the `example/` directory. For a more complete implementation, see [spilliams/terraform-provider-tree-example](https://github.com/spilliams/terraform-provider-tree-example).
+For a complete implementation of a provider using this package, see [spilliams/terraform-provider-tree-example](https://github.com/spilliams/terraform-provider-tree-example).
 
 This helper uses DynamoDB as a storage mechanism for your provider's resources. I might add a sqlite3 plugin, but I have no plans to add other types of storage.

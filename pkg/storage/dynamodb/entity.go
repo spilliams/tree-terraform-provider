@@ -24,12 +24,19 @@ func itemToEntity(item map[string]types.AttributeValue) (*entity, error) {
 
 func ifaceToAttributeValue(in interface{}) types.AttributeValue {
 	var out types.AttributeValue
+
 	if vString, isString := in.(string); isString {
 		out = &types.AttributeValueMemberS{Value: vString}
 	}
+
 	if vStringList, isStringList := in.([]string); isStringList {
-		out = &types.AttributeValueMemberSS{Value: vStringList}
+		outValue := make([]types.AttributeValue, len(vStringList))
+		for i, s := range vStringList {
+			outValue[i] = &types.AttributeValueMemberS{Value: s}
+		}
+		out = &types.AttributeValueMemberL{Value: outValue}
 	}
+
 	return out
 }
 

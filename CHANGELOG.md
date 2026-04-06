@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v0.3.0
+
+Adds a new function `DeleteAttribute` that allows a user to delete a single attribute from an entity.
+
 ## v0.2.1
 
 Something went wrong releasing v0.2.0, and pkg.go.dev has the wrong commit for that tag.

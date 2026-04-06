@@ -579,6 +579,27 @@ func (client *Client) UpdateAttributes(ctx context.Context, entityType, entityID
 	return err
 }
 
+func (client *Client) DeleteAttribute(ctx context.Context, entityType, entityID, attributeName string) error {
+	tflog.Debug(ctx, fmt.Sprintf("DeleteAttribute %q %q %q", entityType, entityID, attributeName))
+
+	_, err := client.ddb.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String(client.tableName),
+		Key: map[string]types.AttributeValue{
+			storageKeyType: &types.AttributeValueMemberS{Value: entityType},
+			storageKeyID:   &types.AttributeValueMemberS{Value: entityID},
+		},
+		UpdateExpression: aws.String("REMOVE #attributes.#key"),
+		ExpressionAttributeNames: map[string]string{
+			"#attributes": storageAttrAttributes,
+			"#key":        attributeName,
+			"#type":       storageKeyType,
+			"#id":         storageKeyID,
+		},
+		ConditionExpression: aws.String("attribute_exists(#type) AND attribute_exists(#id)"),
+	})
+	return err
+}
+
 func (client *Client) DeleteEntity(ctx context.Context, entityType, childType, id string) error {
 	tflog.Debug(ctx, fmt.Sprintf("DeleteEntity %q %q %q", entityType, childType, id))
 	// ensure this entity does not have any children

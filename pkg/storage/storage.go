@@ -21,5 +21,6 @@ type EntityStorer interface {
 	UpdateChildEntity(ctx context.Context, childType, childID, newChildLabel, parentType, newParentID string) (Entity, error)
 	UpdateAttribute(ctx context.Context, entityType, entityID, attributeName string, attributeValue interface{}) error
 	UpdateAttributes(ctx context.Context, entityType, entityID string, attributes map[string]interface{}) error
+	DeleteAttribute(ctx context.Context, entityType, entityID, attributeName string) error
 	DeleteEntity(ctx context.Context, entityType, childType, entityID string) error
 }

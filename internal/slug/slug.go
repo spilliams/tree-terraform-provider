@@ -4,9 +4,11 @@ package slug
 import (
 	"fmt"
 	"math/rand"
+	"strings"
 )
 
 const letters = "abcdefghijklmnopqrstuvwxyz"
+const Separator = "_"
 
 // not terribly fast, but only used when generating new IDs.
 // also not cryptographically secure, but we don't need that.
@@ -19,5 +21,9 @@ func randSeq(n int) string {
 }
 
 func Generate(prefix string) string {
-	return fmt.Sprintf("%s_%s", prefix, randSeq(10))
+	return fmt.Sprintf("%s%s%s", prefix, Separator, randSeq(10))
+}
+
+func Type(id string) string {
+	return strings.Split(id, Separator)[0]
 }

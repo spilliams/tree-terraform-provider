@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v0.4.0
+
+Changes the arguments on several of the client functions.
+
 ## v0.3.0
 
 Adds a new function `DeleteAttribute` that allows a user to delete a single attribute from an entity.

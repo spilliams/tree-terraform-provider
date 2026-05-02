@@ -195,12 +195,12 @@ var (
 	ErrTooManyFound         = errors.New("multiple exist where there must only be one")
 )
 
-func (client *Client) GetEntityByID(ctx context.Context, entityType, id string) (storage.Entity, error) {
+func (client *Client) GetEntityByID(ctx context.Context, id string) (storage.Entity, error) {
 	tflog.Debug(ctx, fmt.Sprintf("GetEntityByID %q", id))
 	output, err := client.ddb.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: aws.String(client.tableName),
 		Key: map[string]types.AttributeValue{
-			storageKeyType: &types.AttributeValueMemberS{Value: entityType},
+			storageKeyType: &types.AttributeValueMemberS{Value: slug.Type(id)},
 			storageKeyID:   &types.AttributeValueMemberS{Value: id},
 		},
 		ConsistentRead: aws.Bool(true),
@@ -301,8 +301,8 @@ func (client *Client) CreateEntity(ctx context.Context, entityType, label string
 	}, nil
 }
 
-func (client *Client) CreateChildEntity(ctx context.Context, entityType, label, parentType, parentID string, attributes map[string]interface{}) (storage.Entity, error) {
-	tflog.Debug(ctx, fmt.Sprintf("CreateChild %q %q %q %q", entityType, label, parentType, parentID))
+func (client *Client) CreateChildEntity(ctx context.Context, entityType, label, parentID string, attributes map[string]interface{}) (storage.Entity, error) {
+	tflog.Debug(ctx, fmt.Sprintf("CreateChild %q %q %q", entityType, label, parentID))
 	id := slug.Generate(entityType)
 	object := &entity{
 		EntityType:       entityType,
@@ -312,7 +312,7 @@ func (client *Client) CreateChildEntity(ctx context.Context, entityType, label, 
 	}
 
 	// make sure parent exists
-	parent, err := client.GetEntityByID(ctx, parentType, parentID)
+	parent, err := client.GetEntityByID(ctx, parentID)
 	if err != nil {
 		return nil, err
 	}
@@ -442,10 +442,10 @@ func (client *Client) ListEntities(ctx context.Context, entityType, labelFilter,
 	return entities, nil
 }
 
-func (client *Client) UpdateEntity(ctx context.Context, entityType, id, newLabel string) (storage.Entity, error) {
-	tflog.Debug(ctx, fmt.Sprintf("UpdatEntity %q %q %q", entityType, id, newLabel))
+func (client *Client) UpdateEntity(ctx context.Context, id, newLabel string) (storage.Entity, error) {
+	tflog.Debug(ctx, fmt.Sprintf("UpdatEntity %q %q", id, newLabel))
 	// ensure new label is available
-	this, err := client.GetEntityByID(ctx, entityType, id)
+	this, err := client.GetEntityByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -460,7 +460,7 @@ func (client *Client) UpdateEntity(ctx context.Context, entityType, id, newLabel
 	output, err := client.ddb.UpdateItem(ctx, &dynamodb.UpdateItemInput{
 		TableName: aws.String(client.tableName),
 		Key: map[string]types.AttributeValue{
-			storageKeyType: &types.AttributeValueMemberS{Value: entityType},
+			storageKeyType: &types.AttributeValueMemberS{Value: slug.Type(id)},
 			storageKeyID:   &types.AttributeValueMemberS{Value: id},
 		},
 		UpdateExpression: aws.String("SET #label = :new_label"),
@@ -484,10 +484,10 @@ func (client *Client) UpdateEntity(ctx context.Context, entityType, id, newLabel
 	return itemToEntity(output.Attributes)
 }
 
-func (client *Client) UpdateChildEntity(ctx context.Context, childType, childID, newChildLabel, parentType, newParentID string) (storage.Entity, error) {
-	tflog.Debug(ctx, fmt.Sprintf("UpdateChildEntity %q %q %q %q %q", childType, childID, newChildLabel, parentType, newParentID))
+func (client *Client) UpdateChildEntity(ctx context.Context, childID, newChildLabel, parentType, newParentID string) (storage.Entity, error) {
+	tflog.Debug(ctx, fmt.Sprintf("UpdateChildEntity %q %q %q %q", childID, newChildLabel, parentType, newParentID))
 	// ensure new parent exists
-	_, err := client.GetEntityByID(ctx, parentType, newParentID)
+	_, err := client.GetEntityByID(ctx, newParentID)
 	if err != nil {
 		return nil, err
 	}
@@ -505,7 +505,7 @@ func (client *Client) UpdateChildEntity(ctx context.Context, childType, childID,
 	output, err := client.ddb.UpdateItem(ctx, &dynamodb.UpdateItemInput{
 		TableName: aws.String(client.tableName),
 		Key: map[string]types.AttributeValue{
-			storageKeyType: &types.AttributeValueMemberS{Value: childType},
+			storageKeyType: &types.AttributeValueMemberS{Value: slug.Type(childID)},
 			storageKeyID:   &types.AttributeValueMemberS{Value: childID},
 		},
 		UpdateExpression: aws.String("SET #label = :new_label, #parent_id = :new_parent_id"),
@@ -531,15 +531,15 @@ func (client *Client) UpdateChildEntity(ctx context.Context, childType, childID,
 	return itemToEntity(output.Attributes)
 }
 
-func (client *Client) UpdateAttribute(ctx context.Context, entityType, entityID, attributeName string, attributeValue interface{}) error {
-	tflog.Debug(ctx, fmt.Sprintf("UpdateAttribute %q %q %q %q", entityType, entityID, attributeName, attributeValue))
+func (client *Client) UpdateAttribute(ctx context.Context, entityID, attributeName string, attributeValue interface{}) error {
+	tflog.Debug(ctx, fmt.Sprintf("UpdateAttribute %q %q %q", entityID, attributeName, attributeValue))
 
 	value := ifaceToAttributeValue(attributeValue)
 
 	_, err := client.ddb.UpdateItem(ctx, &dynamodb.UpdateItemInput{
 		TableName: aws.String(client.tableName),
 		Key: map[string]types.AttributeValue{
-			storageKeyType: &types.AttributeValueMemberS{Value: entityType},
+			storageKeyType: &types.AttributeValueMemberS{Value: slug.Type(entityID)},
 			storageKeyID:   &types.AttributeValueMemberS{Value: entityID},
 		},
 		UpdateExpression: aws.String("SET #attributes.#key = :value"),
@@ -557,12 +557,12 @@ func (client *Client) UpdateAttribute(ctx context.Context, entityType, entityID,
 	return err
 }
 
-func (client *Client) UpdateAttributes(ctx context.Context, entityType, entityID string, attributes map[string]interface{}) error {
-	tflog.Debug(ctx, fmt.Sprintf("UpdateAttributes %q %q", entityType, entityID))
+func (client *Client) UpdateAttributes(ctx context.Context, entityID string, attributes map[string]interface{}) error {
+	tflog.Debug(ctx, fmt.Sprintf("UpdateAttributes %q", entityID))
 	_, err := client.ddb.UpdateItem(ctx, &dynamodb.UpdateItemInput{
 		TableName: aws.String(client.tableName),
 		Key: map[string]types.AttributeValue{
-			storageKeyType: &types.AttributeValueMemberS{Value: entityType},
+			storageKeyType: &types.AttributeValueMemberS{Value: slug.Type(entityID)},
 			storageKeyID:   &types.AttributeValueMemberS{Value: entityID},
 		},
 		UpdateExpression: aws.String("SET #attributes = :new_attributes"),
@@ -579,13 +579,13 @@ func (client *Client) UpdateAttributes(ctx context.Context, entityType, entityID
 	return err
 }
 
-func (client *Client) DeleteAttribute(ctx context.Context, entityType, entityID, attributeName string) error {
-	tflog.Debug(ctx, fmt.Sprintf("DeleteAttribute %q %q %q", entityType, entityID, attributeName))
+func (client *Client) DeleteAttribute(ctx context.Context, entityID, attributeName string) error {
+	tflog.Debug(ctx, fmt.Sprintf("DeleteAttribute %q %q", entityID, attributeName))
 
 	_, err := client.ddb.UpdateItem(ctx, &dynamodb.UpdateItemInput{
 		TableName: aws.String(client.tableName),
 		Key: map[string]types.AttributeValue{
-			storageKeyType: &types.AttributeValueMemberS{Value: entityType},
+			storageKeyType: &types.AttributeValueMemberS{Value: slug.Type(entityID)},
 			storageKeyID:   &types.AttributeValueMemberS{Value: entityID},
 		},
 		UpdateExpression: aws.String("REMOVE #attributes.#key"),
@@ -600,8 +600,8 @@ func (client *Client) DeleteAttribute(ctx context.Context, entityType, entityID,
 	return err
 }
 
-func (client *Client) DeleteEntity(ctx context.Context, entityType, childType, id string) error {
-	tflog.Debug(ctx, fmt.Sprintf("DeleteEntity %q %q %q", entityType, childType, id))
+func (client *Client) DeleteEntity(ctx context.Context, childType, id string) error {
+	tflog.Debug(ctx, fmt.Sprintf("DeleteEntity %q %q", childType, id))
 	// ensure this entity does not have any children
 	if len(childType) > 0 {
 		output, err := client.ddb.Query(ctx, &dynamodb.QueryInput{
@@ -624,14 +624,14 @@ func (client *Client) DeleteEntity(ctx context.Context, entityType, childType, i
 			return ErrNilQueryOutput
 		}
 		if len(output.Items) > 0 {
-			return fmt.Errorf("%s %s has children: %w", entityType, id, ErrCannotDeleteEntity)
+			return fmt.Errorf("%s has children: %w", id, ErrCannotDeleteEntity)
 		}
 	}
 
 	_, err := client.ddb.DeleteItem(ctx, &dynamodb.DeleteItemInput{
 		TableName: aws.String(client.tableName),
 		Key: map[string]types.AttributeValue{
-			storageKeyType: &types.AttributeValueMemberS{Value: entityType},
+			storageKeyType: &types.AttributeValueMemberS{Value: slug.Type(id)},
 			storageKeyID:   &types.AttributeValueMemberS{Value: id},
 		},
 		ExpressionAttributeNames: map[string]string{
